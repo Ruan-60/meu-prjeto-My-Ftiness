@@ -1,4 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  StyleSheet,
+  Modal,
+  SafeAreaView
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Exercise = {
   name: string;
@@ -61,71 +73,73 @@ const App: React.FC = () => {
     workoutPlan["segunda"][0].name
   );
   const [reps, setReps] = useState<number[]>([]);
-  const [weight, setWeight] = useState<number | "">("");
+  const [weight, setWeight] = useState<string>("");
   const [report, setReport] = useState<string>("");
   const [suggestion, setSuggestion] = useState<string>("");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState<boolean>(false);
 
-  // Atualiza exercícios quando o dia muda
   useEffect(() => {
     const firstExercise = workoutPlan[selectedDay][0].name;
     setSelectedExercise(firstExercise);
     setReps(Array(workoutPlan[selectedDay][0].sets).fill(0));
-    const lastEntry = getHistory().find((e) => e.exercise === firstExercise);
-    setWeight(lastEntry?.weight || "");
+    loadHistoryForExercise(firstExercise);
   }, [selectedDay]);
 
-  // Atualiza reps quando exercício muda
   useEffect(() => {
-    const exercise = workoutPlan[selectedDay].find(
-      (ex) => ex.name === selectedExercise
-    );
-    if (exercise) {
-      setReps(Array(exercise.sets).fill(0));
-      const lastEntry = getHistory().find(
-        (e) => e.exercise === selectedExercise
-      );
-      setWeight(lastEntry?.weight || "");
-    }
-  }, [selectedExercise, selectedDay]);
+    loadHistoryForExercise(selectedExercise);
+  }, [selectedExercise]);
 
   useEffect(() => {
     loadHistory();
   }, []);
 
-  function handleRepChange(index: number, value: number) {
-    const newReps = [...reps];
-    newReps[index] = value;
-    setReps(newReps);
-  }
+  const loadHistoryForExercise = async (exercise: string) => {
+    try {
+      const storedHistory = await getHistory();
+      const lastEntry = storedHistory.find((e) => e.exercise === exercise);
+      if (lastEntry) {
+        setWeight(lastEntry.weight.toString());
+      } else {
+        setWeight("");
+      }
+    } catch (error) {
+      console.error('Error loading history:', error);
+    }
+  };
 
-  function handleCalculate() {
+  const handleRepChange = (index: number, value: string) => {
+    const newReps = [...reps];
+    newReps[index] = value === '' ? 0 : parseInt(value) || 0;
+    setReps(newReps);
+  };
+
+  const handleCalculate = async () => {
     const exercise = workoutPlan[selectedDay].find(
       (ex) => ex.name === selectedExercise
     );
     if (!exercise) return;
 
-    if (!weight || weight <= 0) {
-      alert("Por favor, insira um peso válido.");
+    const weightValue = parseFloat(weight);
+    if (!weight || isNaN(weightValue) || weightValue <= 0) {
+      Alert.alert("Erro", "Por favor, insira um peso válido.");
       return;
     }
 
     if (reps.length !== exercise.sets || reps.some((r) => r <= 0)) {
-      alert(`Preencha todas as ${exercise.sets} repetições.`);
+      Alert.alert("Erro", `Preencha todas as ${exercise.sets} repetições.`);
       return;
     }
 
-    const suggestionText =
-      report !== ""
-        ? `Relatório anotado: ${report}`
-        : "Consistência! Continue evoluindo com qualidade.";
+    const suggestionText = report !== ""
+      ? `Relatório anotado: ${report}`
+      : "Consistência! Continue evoluindo com qualidade.";
 
     setSuggestion(suggestionText);
-    saveToHistory(reps, weight, suggestionText);
-  }
+    await saveToHistory(reps, weightValue, suggestionText);
+  };
 
-  function saveToHistory(repsArray: number[], weightValue: number, suggestionText: string) {
+  const saveToHistory = async (repsArray: number[], weightValue: number, suggestionText: string) => {
     const newEntry: HistoryEntry = {
       date: new Date().toLocaleDateString("pt-BR"),
       day: selectedDay,
@@ -134,158 +148,462 @@ const App: React.FC = () => {
       weight: weightValue,
       suggestion: suggestionText,
     };
+    
     const updatedHistory = [newEntry, ...history];
     setHistory(updatedHistory);
-    localStorage.setItem("workoutHistory", JSON.stringify(updatedHistory));
-  }
-
-  function getHistory(): HistoryEntry[] {
-    return JSON.parse(localStorage.getItem("workoutHistory") || "[]");
-  }
-
-  function loadHistory() {
-    const storedHistory = getHistory();
-    setHistory(storedHistory);
-  }
-
-  function toggleHistory() {
-    setShowHistory(!showHistory);
-  }
-
-  function clearHistory() {
-    if (confirm("Tem certeza que deseja apagar TODO o histórico?")) {
-      localStorage.removeItem("workoutHistory");
-      setHistory([]);
+    try {
+      await AsyncStorage.setItem("workoutHistory", JSON.stringify(updatedHistory));
+    } catch (error) {
+      console.error('Error saving history:', error);
     }
-  }
+  };
+
+  const getHistory = async (): Promise<HistoryEntry[]> => {
+    try {
+      const historyData = await AsyncStorage.getItem("workoutHistory");
+      return historyData ? JSON.parse(historyData) : [];
+    } catch (error) {
+      console.error('Error getting history:', error);
+      return [];
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const storedHistory = await getHistory();
+      setHistory(storedHistory);
+    } catch (error) {
+      console.error('Error loading history:', error);
+    }
+  };
+
+  const clearHistory = async () => {
+    Alert.alert(
+      "Confirmar",
+      "Tem certeza que deseja apagar TODO o histórico?",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Apagar",
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem("workoutHistory");
+              setHistory([]);
+            } catch (error) {
+              console.error('Error clearing history:', error);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const currentExercise = workoutPlan[selectedDay].find(
     (ex) => ex.name === selectedExercise
   );
 
   return (
-    <div className="container">
-      <header>
-        <h1>{"ABSOLUTE ♤ DOMINIUS"}</h1>
-      </header>
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.header}>
+          <Text style={styles.title}>ABSOLUTE ♤ DOMINIUS</Text>
+        </View>
 
-      <main>
-        <div className="controls">
-          <div className="control-group">
-            <label>Selecione o Dia do Treino:</label>
-            <select
-              value={selectedDay}
-              onChange={(e) => setSelectedDay(e.target.value)}
-            >
+        <View style={styles.controls}>
+          <View style={styles.controlGroup}>
+            <Text style={styles.label}>Selecione o Dia do Treino:</Text>
+            <ScrollView horizontal style={styles.daySelector} showsHorizontalScrollIndicator={false}>
               {Object.keys(workoutPlan).map((day) => (
-                <option key={day} value={day}>
-                  {day.charAt(0).toUpperCase() + day.slice(1)}
-                </option>
+                <TouchableOpacity
+                  key={day}
+                  style={[
+                    styles.dayButton,
+                    selectedDay === day && styles.dayButtonSelected
+                  ]}
+                  onPress={() => setSelectedDay(day)}
+                >
+                  <Text style={[
+                    styles.dayButtonText,
+                    selectedDay === day && styles.dayButtonTextSelected
+                  ]}>
+                    {day.charAt(0).toUpperCase() + day.slice(1)}
+                  </Text>
+                </TouchableOpacity>
               ))}
-            </select>
-          </div>
+            </ScrollView>
+          </View>
 
-          <div className="control-group">
-            <label>Selecione o Exercício:</label>
-            <select
-              value={selectedExercise}
-              onChange={(e) => setSelectedExercise(e.target.value)}
-            >
+          <View style={styles.controlGroup}>
+            <Text style={styles.label}>Selecione o Exercício:</Text>
+            <ScrollView style={styles.exerciseSelector} showsVerticalScrollIndicator={false}>
               {workoutPlan[selectedDay].map((ex) => (
-                <option key={ex.name} value={ex.name}>
-                  {ex.name}
-                </option>
+                <TouchableOpacity
+                  key={ex.name}
+                  style={[
+                    styles.exerciseButton,
+                    selectedExercise === ex.name && styles.exerciseButtonSelected
+                  ]}
+                  onPress={() => setSelectedExercise(ex.name)}
+                >
+                  <Text style={[
+                    styles.exerciseButtonText,
+                    selectedExercise === ex.name && styles.exerciseButtonTextSelected
+                  ]}>
+                    {ex.name}
+                  </Text>
+                </TouchableOpacity>
               ))}
-            </select>
-          </div>
-        </div>
+            </ScrollView>
+          </View>
+        </View>
 
         {currentExercise && (
-          <div className="card">
-            <h3>{currentExercise.name}</h3>
-            <p>
-              <strong>Meta:</strong> {currentExercise.sets} séries de{" "}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{currentExercise.name}</Text>
+            <Text style={styles.metaText}>
+              <Text style={styles.bold}>Meta:</Text> {currentExercise.sets} séries de{" "}
               {currentExercise.reps} repetições.
-            </p>
+            </Text>
 
-            <div className="series-inputs">
+            <View style={styles.seriesInputs}>
+              <Text style={styles.label}>Repetições por Série:</Text>
               {reps.map((r, idx) => (
-                <div className="control-group" key={idx}>
-                  <label>Série {idx + 1} (Reps)</label>
-                  <input
-                    type="number"
-                    value={r === 0 ? "" : r}
-                    onChange={(e) =>
-                      handleRepChange(idx, parseInt(e.target.value))
-                    }
+                <View style={styles.repInputContainer} key={idx}>
+                  <Text style={styles.repLabel}>Série {idx + 1}</Text>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="numeric"
+                    value={r === 0 ? "" : r.toString()}
+                    onChangeText={(value) => handleRepChange(idx, value)}
+                    placeholder="0"
                   />
-                </div>
+                </View>
               ))}
-            </div>
+            </View>
 
-            <div className="control-group" style={{ marginTop: "1rem" }}>
-              <label>Peso Utilizado (kg)</label>
-              <input
-                type="number"
+            <View style={styles.controlGroup}>
+              <Text style={styles.label}>Peso Utilizado (kg)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
                 value={weight}
-                onChange={(e) => setWeight(parseFloat(e.target.value))}
+                onChangeText={setWeight}
                 placeholder="Ex: 35"
               />
-            </div>
-          </div>
+            </View>
+          </View>
         )}
 
-        <div className="card">
-          <div className="control-group">
-            <label>Relatório: O que preciso melhorar?</label>
-            <textarea
-              rows={4}
-              value={report}
-              onChange={(e) => setReport(e.target.value)}
-              placeholder="Ex: Aumentar carga, Repetições, Testar variações..."
-            ></textarea>
-          </div>
-          <button onClick={handleCalculate}>Salvar Relatório</button>
-        </div>
+        <View style={styles.card}>
+          <Text style={styles.label}>Relatório: O que preciso melhorar?</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            multiline
+            numberOfLines={4}
+            value={report}
+            onChangeText={setReport}
+            placeholder="Ex: Aumentar carga, Repetições, Testar variações..."
+          />
+          <TouchableOpacity style={styles.button} onPress={handleCalculate}>
+            <Text style={styles.buttonText}>Salvar Relatório</Text>
+          </TouchableOpacity>
+        </View>
 
-        {suggestion && <div className="card-suggestion">{suggestion}</div>}
+        {suggestion ? (
+          <View style={styles.suggestionCard}>
+            <Text style={styles.suggestionText}>{suggestion}</Text>
+          </View>
+        ) : null}
 
-        <div className="history-controls">
-          <button onClick={toggleHistory}>Mostrar/Ocultar Histórico</button>
-        </div>
+        <TouchableOpacity style={styles.historyButton} onPress={() => setShowHistory(true)}>
+          <Text style={styles.historyButtonText}>Ver Histórico</Text>
+        </TouchableOpacity>
 
-        {showHistory && (
-          <div id="history-log">
-            <h2>Histórico de Treinos</h2>
-            <div>
-              {history.length === 0 && <p>Nenhum treino registrado ainda.</p>}
-              {history.map((entry, idx) => (
-                <div className="history-item" key={idx}>
-                  <h4>
-                    {entry.exercise} - {entry.date}
-                  </h4>
-                  <p>
-                    <strong>Dia:</strong>{" "}
-                    {entry.day.charAt(0).toUpperCase() + entry.day.slice(1)}
-                  </p>
-                  <p>
-                    <strong>Peso:</strong> {entry.weight} kg
-                  </p>
-                  <p>
-                    <strong>Reps por Série:</strong> {entry.setsDetail}
-                  </p>
-                  <p>
-                    <strong>Relatório:</strong> {entry.suggestion}
-                  </p>
-                </div>
-              ))}
-            </div>
-            <button onClick={clearHistory}>Apagar Histórico</button>
-          </div>
-        )}
-      </main>
-    </div>
+        <Modal
+          visible={showHistory}
+          animationType="slide"
+          onRequestClose={() => setShowHistory(false)}
+        >
+          <SafeAreaView style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Histórico de Treinos</Text>
+              <TouchableOpacity onPress={() => setShowHistory(false)}>
+                <Text style={styles.closeButton}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.historyList}>
+              {history.length === 0 ? (
+                <Text style={styles.emptyHistory}>Nenhum treino registrado ainda.</Text>
+              ) : (
+                history.map((entry, idx) => (
+                  <View key={idx} style={styles.historyItem}>
+                    <Text style={styles.historyTitle}>
+                      {entry.exercise} - {entry.date}
+                    </Text>
+                    <Text style={styles.historyText}>
+                      <Text style={styles.bold}>Dia:</Text>{" "}
+                      {entry.day.charAt(0).toUpperCase() + entry.day.slice(1)}
+                    </Text>
+                    <Text style={styles.historyText}>
+                      <Text style={styles.bold}>Peso:</Text> {entry.weight} kg
+                    </Text>
+                    <Text style={styles.historyText}>
+                      <Text style={styles.bold}>Reps por Série:</Text> {entry.setsDetail}
+                    </Text>
+                    <Text style={styles.historyText}>
+                      <Text style={styles.bold}>Relatório:</Text> {entry.suggestion}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+            
+            {history.length > 0 && (
+              <TouchableOpacity style={styles.clearButton} onPress={clearHistory}>
+                <Text style={styles.clearButtonText}>Apagar Histórico</Text>
+              </TouchableOpacity>
+            )}
+          </SafeAreaView>
+        </Modal>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  scrollView: {
+    flex: 1,
+    padding: 16,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  controls: {
+    marginBottom: 20,
+  },
+  controlGroup: {
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#333',
+  },
+  daySelector: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  dayButton: {
+    padding: 12,
+    marginRight: 8,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  dayButtonSelected: {
+    backgroundColor: '#007AFF',
+  },
+  dayButtonText: {
+    color: '#666',
+    fontWeight: '600',
+  },
+  dayButtonTextSelected: {
+    color: 'white',
+  },
+  exerciseSelector: {
+    maxHeight: 200,
+  },
+  exerciseButton: {
+    padding: 12,
+    marginBottom: 8,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+  },
+  exerciseButtonSelected: {
+    backgroundColor: '#007AFF',
+  },
+  exerciseButtonText: {
+    color: '#666',
+  },
+  exerciseButtonTextSelected: {
+    color: 'white',
+  },
+  card: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#333',
+  },
+  metaText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+  },
+  bold: {
+    fontWeight: 'bold',
+  },
+  seriesInputs: {
+    marginBottom: 16,
+  },
+  repInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  repLabel: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: 'white',
+    minWidth: 80,
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  suggestionCard: {
+    backgroundColor: '#e8f5e8',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  suggestionText: {
+    color: '#2e7d32',
+    fontSize: 14,
+  },
+  historyButton: {
+    backgroundColor: '#666',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  historyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    backgroundColor: 'white',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    color: '#007AFF',
+    fontSize: 16,
+  },
+  historyList: {
+    flex: 1,
+    padding: 16,
+  },
+  emptyHistory: {
+    textAlign: 'center',
+    color: '#666',
+    fontSize: 16,
+    marginTop: 50,
+  },
+  historyItem: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#333',
+  },
+  historyText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  clearButton: {
+    backgroundColor: '#ff3b30',
+    padding: 16,
+    margin: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  clearButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
 
 export default App;
