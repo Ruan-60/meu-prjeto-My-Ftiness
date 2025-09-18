@@ -1,3 +1,4 @@
+
 // src/screens/HomeScreen.tsx
 import React, { useEffect, useState } from "react";
 import {
@@ -10,49 +11,65 @@ import {
   StyleSheet,
   SafeAreaView,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { workoutPlan, HistoryEntry, Exercise } from "../data/workoutPlan";
 import { useNavigation } from "@react-navigation/native";
+import { useDatabase } from "../hooks/useDatabase";
+import { Exercise } from "../database/database";
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
+  const { 
+    isInitialized, 
+    isLoading, 
+    getExercisesByDay, 
+    getExerciseByName, 
+    saveWorkout, 
+    getLastWorkoutForExercise 
+  } = useDatabase();
+  
   const [selectedDay, setSelectedDay] = useState<string>("segunda");
-  const [selectedExercise, setSelectedExercise] = useState<string>(
-    workoutPlan["segunda"][0].name
-  );
+  const [selectedExercise, setSelectedExercise] = useState<string>("");
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
   const [reps, setReps] = useState<number[]>([]);
   const [weight, setWeight] = useState<string>("");
   const [report, setReport] = useState<string>("");
   const [suggestion, setSuggestion] = useState<string>("");
 
   useEffect(() => {
-    const firstExercise = workoutPlan[selectedDay][0].name;
-    setSelectedExercise(firstExercise);
-    setReps(Array(workoutPlan[selectedDay][0].sets).fill(0));
-    loadHistoryForExercise(firstExercise);
-  }, [selectedDay]);
+    if (isInitialized) {
+      loadExercisesForDay();
+    }
+  }, [selectedDay, isInitialized]);
 
   useEffect(() => {
-    setReps(Array(workoutPlan[selectedDay].find(ex => ex.name === selectedExercise)?.sets ?? 0).fill(0));
-    loadHistoryForExercise(selectedExercise);
-  }, [selectedExercise]);
+    if (selectedExercise && exercises.length > 0) {
+      const exercise = exercises.find(ex => ex.name === selectedExercise);
+      if (exercise) {
+        setCurrentExercise(exercise);
+        setReps(Array(exercise.sets).fill(0));
+        loadHistoryForExercise(exercise.name);
+      }
+    }
+  }, [selectedExercise, exercises]);
 
-  const getHistory = async (): Promise<HistoryEntry[]> => {
+  const loadExercisesForDay = async () => {
     try {
-      const historyData = await AsyncStorage.getItem("workoutHistory");
-      return historyData ? JSON.parse(historyData) : [];
+      const dayExercises = await getExercisesByDay(selectedDay);
+      setExercises(dayExercises);
+      
+      if (dayExercises.length > 0) {
+        setSelectedExercise(dayExercises[0].name);
+      }
     } catch (error) {
-      console.error("Error getting history:", error);
-      return [];
+      console.error('Erro ao carregar exercícios:', error);
     }
   };
 
   const loadHistoryForExercise = async (exerciseName: string) => {
     try {
-      const storedHistory = await getHistory();
-      const lastEntry = storedHistory.find((e) => e.exercise === exerciseName);
-      if (lastEntry) {
-        setWeight(lastEntry.weight.toString());
+      const lastWorkout = await getLastWorkoutForExercise(exerciseName);
+      if (lastWorkout) {
+        setWeight(lastWorkout.weight.toString());
       } else {
         setWeight("");
       }
@@ -68,28 +85,34 @@ const HomeScreen: React.FC = () => {
   };
 
   const saveToHistory = async (repsArray: number[], weightValue: number, suggestionText: string) => {
-    const newEntry: HistoryEntry = {
-      date: new Date().toLocaleDateString("pt-BR"),
-      day: selectedDay,
-      exercise: selectedExercise,
-      setsDetail: repsArray.join(", "),
-      weight: weightValue,
-      suggestion: suggestionText,
-    };
+    if (!currentExercise) return;
 
-    const stored = await getHistory();
-    const updatedHistory = [newEntry, ...stored];
     try {
-      await AsyncStorage.setItem("workoutHistory", JSON.stringify(updatedHistory));
+      const sets = repsArray.map((reps, index) => ({
+        setNumber: index + 1,
+        reps: reps,
+        weight: weightValue
+      }));
+
+      await saveWorkout({
+        date: new Date().toLocaleDateString("pt-BR"),
+        day: selectedDay,
+        exerciseId: currentExercise.id,
+        exerciseName: selectedExercise,
+        weight: weightValue,
+        setsDetail: repsArray.join(", "),
+        suggestion: suggestionText,
+        sets: sets
+      });
+      
+      setSuggestion(suggestionText);
     } catch (error) {
       console.error("Error saving history:", error);
     }
-    setSuggestion(suggestionText);
   };
 
   const handleCalculate = async () => {
-    const exercise = workoutPlan[selectedDay].find((ex) => ex.name === selectedExercise);
-    if (!exercise) return;
+    if (!currentExercise) return;
 
     const weightValue = parseFloat(weight);
     if (!weight || isNaN(weightValue) || weightValue <= 0) {
@@ -97,8 +120,8 @@ const HomeScreen: React.FC = () => {
       return;
     }
 
-    if (reps.length !== exercise.sets || reps.some((r) => r <= 0)) {
-      Alert.alert("Erro", `Preencha todas as ${exercise.sets} repetições.`);
+    if (reps.length !== currentExercise.sets || reps.some((r) => r <= 0)) {
+      Alert.alert("Erro", `Preencha todas as ${currentExercise.sets} repetições.`);
       return;
     }
 
@@ -107,7 +130,25 @@ const HomeScreen: React.FC = () => {
     Alert.alert("Salvo", "Relatório salvo com sucesso!");
   };
 
-  const currentExercise = workoutPlan[selectedDay].find((ex) => ex.name === selectedExercise);
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Carregando...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isInitialized) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Inicializando banco de dados...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -119,7 +160,7 @@ const HomeScreen: React.FC = () => {
         <View style={styles.controls}>
           <Text style={styles.label}>Selecione o Dia do Treino:</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daySelector}>
-            {Object.keys(workoutPlan).map((day) => (
+            {["segunda", "quarta", "sexta", "sabado"].map((day) => (
               <TouchableOpacity
                 key={day}
                 style={[styles.dayButton, selectedDay === day && styles.dayButtonSelected]}
@@ -134,9 +175,9 @@ const HomeScreen: React.FC = () => {
 
           <Text style={[styles.label, { marginTop: 12 }]}>Selecione o Exercício:</Text>
           <View style={styles.exerciseList}>
-            {workoutPlan[selectedDay].map((ex) => (
+            {exercises.map((ex) => (
               <TouchableOpacity
-                key={ex.name}
+                key={ex.id}
                 style={[styles.exerciseButton, selectedExercise === ex.name && styles.exerciseButtonSelected]}
                 onPress={() => setSelectedExercise(ex.name)}
               >
@@ -240,6 +281,17 @@ const styles = StyleSheet.create({
   linkButtonText: { color: "#007AFF", fontWeight: "600" },
   suggestionCard: { backgroundColor: "#e8f5e8", padding: 12, borderRadius: 10, marginTop: 6, borderLeftWidth: 4, borderLeftColor: "#4CAF50" },
   suggestionText: { color: "#2e7d32" },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center", 
+    backgroundColor: "#f5f5f5" 
+  },
+  loadingText: { 
+    fontSize: 18, 
+    color: "#666", 
+    fontWeight: "600" 
+  },
 });
 
 export default HomeScreen;

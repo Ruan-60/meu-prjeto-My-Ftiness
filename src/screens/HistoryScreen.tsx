@@ -8,32 +8,32 @@ import {
   SafeAreaView,
   Alert,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native"; // <-- importante
-
-type HistoryEntry = {
-  date: string;
-  day: string;
-  exercise: string;
-  setsDetail: string;
-  weight: number;
-  suggestion: string;
-};
+import { useFocusEffect } from "@react-navigation/native";
+import { useDatabase } from "../hooks/useDatabase";
+import { WorkoutHistory } from "../database/database";
 
 const HistoryScreen: React.FC = () => {
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [history, setHistory] = useState<WorkoutHistory[]>([]);
+  const { 
+    isInitialized, 
+    isLoading, 
+    getWorkoutHistory, 
+    clearWorkoutHistory 
+  } = useDatabase();
 
   // Atualiza o histórico sempre que a tela fica visível
   useFocusEffect(
     useCallback(() => {
-      loadHistory();
-    }, [])
+      if (isInitialized) {
+        loadHistory();
+      }
+    }, [isInitialized])
   );
 
   const loadHistory = async () => {
     try {
-      const data = await AsyncStorage.getItem("workoutHistory");
-      if (data) setHistory(JSON.parse(data));
+      const workoutHistory = await getWorkoutHistory();
+      setHistory(workoutHistory);
     } catch (error) {
       console.error("Erro ao carregar histórico:", error);
     }
@@ -45,12 +45,37 @@ const HistoryScreen: React.FC = () => {
       {
         text: "Apagar",
         onPress: async () => {
-          await AsyncStorage.removeItem("workoutHistory");
-          setHistory([]);
+          const success = await clearWorkoutHistory();
+          if (success) {
+            setHistory([]);
+            Alert.alert("Sucesso", "Histórico apagado com sucesso!");
+          } else {
+            Alert.alert("Erro", "Falha ao apagar histórico.");
+          }
         },
       },
     ]);
   };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Carregando...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isInitialized) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Inicializando banco de dados...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -59,12 +84,12 @@ const HistoryScreen: React.FC = () => {
         {history.length === 0 ? (
           <Text style={styles.empty}>Nenhum treino registrado.</Text>
         ) : (
-          history.map((h, i) => (
-            <View key={i} style={styles.card}>
-              <Text style={styles.exercise}>{h.exercise}</Text>
+          history.map((h) => (
+            <View key={h.id} style={styles.card}>
+              <Text style={styles.exercise}>{h.exercise_name}</Text>
               <Text>Dia: {h.day}</Text>
               <Text>Peso: {h.weight} kg</Text>
-              <Text>Séries: {h.setsDetail}</Text>
+              <Text>Séries: {h.sets_detail}</Text>
               <Text>Relatório: {h.suggestion}</Text>
               <Text style={styles.date}>{h.date}</Text>
             </View>
@@ -100,6 +125,17 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   clearText: { color: "white", textAlign: "center", fontWeight: "600" },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center", 
+    backgroundColor: "#f5f5f5" 
+  },
+  loadingText: { 
+    fontSize: 18, 
+    color: "#666", 
+    fontWeight: "600" 
+  },
 });
 
 export default HistoryScreen;
