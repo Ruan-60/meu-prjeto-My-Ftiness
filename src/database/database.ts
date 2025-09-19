@@ -338,3 +338,4 @@ export const getWorkoutStats = async () => {
 };
 
 export { db };
+

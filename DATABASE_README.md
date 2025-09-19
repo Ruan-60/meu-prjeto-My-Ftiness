@@ -185,3 +185,4 @@ O aplicativo agora possui:
 - ✅ Estrutura escalável para futuras funcionalidades
 
 **O app está pronto para uso com banco de dados SQLite!** 🚀
+

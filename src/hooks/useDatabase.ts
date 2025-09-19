@@ -170,3 +170,4 @@ export const useDatabase = () => {
     getWorkoutStats: getWorkoutStatsFromDB,
   };
 };
+
