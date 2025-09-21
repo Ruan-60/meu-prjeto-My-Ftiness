@@ -337,5 +337,17 @@ export const getWorkoutStats = async () => {
   }
 };
 
+
+export const clearAllDays = async (): Promise<void> => {
+  if (!db) throw new Error('Banco de dados não inicializado');
+  try {
+    await db.runAsync('DELETE FROM exercises');
+    console.log('Dias de treino apagados com sucesso!');
+  } catch (error) {
+    console.error('Erro ao apagar dias:', error);
+    throw error;
+  }
+};
+
 export { db };
 
