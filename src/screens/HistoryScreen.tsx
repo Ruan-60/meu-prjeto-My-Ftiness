@@ -107,7 +107,7 @@ const HistoryScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#f5f5f5",paddingLeft: 60, },
+  container: { flex: 1, padding: 16, backgroundColor: "#f5f5f5" },
   title: { fontSize: 20, fontWeight: "bold", marginBottom: 12 },
   empty: { textAlign: "center", color: "#666", marginTop: 50 },
   card: {

@@ -350,4 +350,3 @@ export const clearAllDays = async (): Promise<void> => {
 };
 
 export { db };
-

@@ -271,8 +271,7 @@ const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
     container: { 
     flex: 1, 
-    backgroundColor: "#f5f5f5",
-    paddingLeft: 60, 
+    backgroundColor: "#f5f5f5", 
   },
   scrollView: { flex: 1, padding: 16 },
   header: { alignItems: "center", marginBottom: 16 },
