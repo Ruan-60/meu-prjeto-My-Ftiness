@@ -8,13 +8,13 @@ const ProfileScreen: React.FC = () => {
       <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.header}>
           <Text style={styles.title}>Meu Perfil</Text>
-          <Text style={styles.subtitle}>Acompanhe seu progresso 🎯</Text>
+          <Text style={styles.subtitle}>Acompanhe seu progresso </Text>
         </View>
         
         <StatsCard />
         
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>💪 Sobre o App</Text>
+          <Text style={styles.infoTitle}>Sobre o App</Text>
           <Text style={styles.infoText}>
             Absolute Dominius é seu companheiro de treino para registrar exercícios, 
             acompanhar progresso e manter a consistência nos seus treinos.
@@ -22,7 +22,7 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>🗄️ Banco de Dados</Text>
+          <Text style={styles.infoTitle}> Banco de Dados</Text>
           <Text style={styles.infoText}>
             Todos os seus dados são armazenados localmente no dispositivo usando SQLite, 
             garantindo privacidade e acesso offline.
@@ -30,7 +30,7 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>📱 Funcionalidades</Text>
+          <Text style={styles.infoTitle}> Funcionalidades</Text>
           <Text style={styles.infoText}>
             • Registro de treinos por dia{'\n'}
             • Histórico completo de exercícios{'\n'}
@@ -46,7 +46,7 @@ const ProfileScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: "#f5f5f5" 
+    backgroundColor: "#f5f5f5" ,
   },
   scrollView: { 
     flex: 1, 

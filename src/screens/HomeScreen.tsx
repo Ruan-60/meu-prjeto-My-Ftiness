@@ -1,6 +1,5 @@
-
 // src/screens/HomeScreen.tsx
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -12,143 +11,127 @@ import {
   SafeAreaView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useDatabase } from "../hooks/useDatabase";
-import { Exercise } from "../database/database";
+import { saveWorkoutHistory } from "../database/database"; 
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  const { 
-    isInitialized, 
-    isLoading, 
-    getExercisesByDay, 
-    getExerciseByName, 
-    saveWorkout, 
-    getLastWorkoutForExercise 
-  } = useDatabase();
-  
-  const [selectedDay, setSelectedDay] = useState<string>("segunda");
-  const [selectedExercise, setSelectedExercise] = useState<string>("");
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [currentExercise, setCurrentExercise] = useState<Exercise | null>(null);
-  const [reps, setReps] = useState<number[]>([]);
-  const [weight, setWeight] = useState<string>("");
+
+ 
+  const [days, setDays] = useState<string[]>([]);
+  const [selectedDay, setSelectedDay] = useState<string>("");
+  const [newDay, setNewDay] = useState<string>("");
+
+  // Exercícios livres
+  const [exercises, setExercises] = useState<{ name: string; reps: number[]; weight: string }[]>([]);
+  const [newExercise, setNewExercise] = useState<string>("");
+
   const [report, setReport] = useState<string>("");
   const [suggestion, setSuggestion] = useState<string>("");
 
-  useEffect(() => {
-    if (isInitialized) {
-      loadExercisesForDay();
-    }
-  }, [selectedDay, isInitialized]);
-
-  useEffect(() => {
-    if (selectedExercise && exercises.length > 0) {
-      const exercise = exercises.find(ex => ex.name === selectedExercise);
-      if (exercise) {
-        setCurrentExercise(exercise);
-        setReps(Array(exercise.sets).fill(0));
-        loadHistoryForExercise(exercise.name);
-      }
-    }
-  }, [selectedExercise, exercises]);
-
-  const loadExercisesForDay = async () => {
-    try {
-      const dayExercises = await getExercisesByDay(selectedDay);
-      setExercises(dayExercises);
-      
-      if (dayExercises.length > 0) {
-        setSelectedExercise(dayExercises[0].name);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar exercícios:', error);
+  // Adicionar novo dia
+  const handleAddDay = () => {
+    const day = newDay.trim();
+    if (day && !days.includes(day)) {
+      setDays([...days, day]);
+      setSelectedDay(day);
+      setNewDay("");
+      setExercises([]); 
+    } else if (days.includes(day)) {
+      Alert.alert("Atenção", "Esse dia já foi adicionado.");
     }
   };
 
-  const loadHistoryForExercise = async (exerciseName: string) => {
-    try {
-      const lastWorkout = await getLastWorkoutForExercise(exerciseName);
-      if (lastWorkout) {
-        setWeight(lastWorkout.weight.toString());
-      } else {
-        setWeight("");
-      }
-    } catch (error) {
-      console.error("Error loading history:", error);
+  const handleRemoveDay = (day: string) => {
+    const newDays = days.filter(d => d !== day);
+    setDays(newDays);
+    if (selectedDay === day) {
+      setSelectedDay(newDays[0] || "");
+      setExercises([]);
     }
   };
 
-  const handleRepChange = (index: number, value: string) => {
-    const newReps = [...reps];
-    newReps[index] = value === "" ? 0 : parseInt(value) || 0;
-    setReps(newReps);
+  const handleAddExercise = () => {
+    const name = newExercise.trim();
+    if (name && !exercises.some(e => e.name === name)) {
+      setExercises([...exercises, { name, reps: [0], weight: "" }]);
+      setNewExercise("");
+    } else if (exercises.some(e => e.name === name)) {
+      Alert.alert("Atenção", "Esse exercício já foi adicionado.");
+    }
   };
 
-  const saveToHistory = async (repsArray: number[], weightValue: number, suggestionText: string) => {
-    if (!currentExercise) return;
+  // Remover exercício
+  const handleRemoveExercise = (name: string) => {
+    setExercises(exercises.filter(e => e.name !== name));
+  };
 
-    try {
-      const sets = repsArray.map((reps, index) => ({
-        setNumber: index + 1,
-        reps: reps,
-        weight: weightValue
-      }));
+  // Alterar repetições
+  const handleRepChange = (exName: string, idx: number, value: string) => {
+    setExercises(exercises.map(e =>
+      e.name === exName
+        ? { ...e, reps: e.reps.map((r, i) => (i === idx ? (parseInt(value) || 0) : r)) }
+        : e
+    ));
+  };
 
-      await saveWorkout({
+  // Alterar peso
+  const handleWeightChange = (exName: string, value: string) => {
+    setExercises(exercises.map(e =>
+      e.name === exName ? { ...e, weight: value } : e
+    ));
+  };
+
+  // Adicionar/Remover série
+  const handleAddSeries = (exName: string) => {
+    setExercises(exercises.map(e =>
+      e.name === exName ? { ...e, reps: [...e.reps, 0] } : e
+    ));
+  };
+  const handleRemoveSeries = (exName: string) => {
+    setExercises(exercises.map(e =>
+      e.name === exName && e.reps.length > 1
+        ? { ...e, reps: e.reps.slice(0, -1) }
+        : e
+    ));
+  };
+
+  // Salvar relatório (simples, só mostra um resumo)
+  const handleSave = async () => {
+    if (!selectedDay) {
+      Alert.alert("Atenção", "Selecione ou adicione um dia de treino.");
+      return;
+    }
+    if (exercises.length === 0) {
+      Alert.alert("Atenção", "Adicione pelo menos um exercício.");
+      return;
+    }
+
+    let resumo = `Dia: ${selectedDay}\n`;
+
+    for (const ex of exercises) {
+      // Salva cada exercício no histórico
+      await saveWorkoutHistory({
         date: new Date().toLocaleDateString("pt-BR"),
         day: selectedDay,
-        exerciseId: currentExercise.id,
-        exerciseName: selectedExercise,
-        weight: weightValue,
-        setsDetail: repsArray.join(", "),
-        suggestion: suggestionText,
-        sets: sets
+        exerciseId: 0, 
+        exerciseName: ex.name,
+        weight: parseFloat(ex.weight) || 0,
+        setsDetail: ex.reps.join("/"),
+        suggestion: report,
+        sets: ex.reps.map((reps, idx) => ({
+          setNumber: idx + 1,
+          reps,
+          weight: parseFloat(ex.weight) || 0,
+        })),
       });
-      
-      setSuggestion(suggestionText);
-    } catch (error) {
-      console.error("Error saving history:", error);
-    }
-  };
 
-  const handleCalculate = async () => {
-    if (!currentExercise) return;
-
-    const weightValue = parseFloat(weight);
-    if (!weight || isNaN(weightValue) || weightValue <= 0) {
-      Alert.alert("Erro", "Por favor, insira um peso válido.");
-      return;
+      resumo += `• ${ex.name}: ${ex.reps.length} série(s), repetições: ${ex.reps.join("/")}, peso: ${ex.weight}kg\n`;
     }
 
-    if (reps.length !== currentExercise.sets || reps.some((r) => r <= 0)) {
-      Alert.alert("Erro", `Preencha todas as ${currentExercise.sets} repetições.`);
-      return;
-    }
-
-    const suggestionText = report !== "" ? `Relatório anotado: ${report}` : "Consistência! Continue evoluindo com qualidade.";
-    await saveToHistory(reps, weightValue, suggestionText);
+    if (report) resumo += `\nObservações: ${report}`;
+    setSuggestion(resumo);
     Alert.alert("Salvo", "Relatório salvo com sucesso!");
   };
-
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Carregando...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!isInitialized) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Inicializando banco de dados...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -157,89 +140,124 @@ const HomeScreen: React.FC = () => {
           <Text style={styles.title}>ABSOLUTE ♤ DOMINIUS</Text>
         </View>
 
-        <View style={styles.controls}>
-          <Text style={styles.label}>Selecione o Dia do Treino:</Text>
+        {/* Dias de treino */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Dias de Treino</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daySelector}>
-            {["segunda", "quarta", "sexta", "sabado"].map((day) => (
-              <TouchableOpacity
-                key={day}
-                style={[styles.dayButton, selectedDay === day && styles.dayButtonSelected]}
-                onPress={() => setSelectedDay(day)}
-              >
-                <Text style={[styles.dayButtonText, selectedDay === day && styles.dayButtonTextSelected]}>
-                  {day.charAt(0).toUpperCase() + day.slice(1)}
-                </Text>
-              </TouchableOpacity>
+            {days.map((day) => (
+              <View key={day} style={styles.dayItem}>
+                <TouchableOpacity
+                  style={[styles.dayButton, selectedDay === day && styles.dayButtonSelected]}
+                  onPress={() => { setSelectedDay(day); setExercises([]); }}
+                >
+                  <Text style={[styles.dayButtonText, selectedDay === day && styles.dayButtonTextSelected]}>
+                    {day}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleRemoveDay(day)}>
+                  <Text style={styles.removeDay}>✕</Text>
+                </TouchableOpacity>
+              </View>
             ))}
           </ScrollView>
-
-          <Text style={[styles.label, { marginTop: 12 }]}>Selecione o Exercício:</Text>
-          <View style={styles.exerciseList}>
-            {exercises.map((ex) => (
-              <TouchableOpacity
-                key={ex.id}
-                style={[styles.exerciseButton, selectedExercise === ex.name && styles.exerciseButtonSelected]}
-                onPress={() => setSelectedExercise(ex.name)}
-              >
-                <Text style={[styles.exerciseText, selectedExercise === ex.name && styles.exerciseTextSelected]}>
-                  {ex.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.addDayRow}>
+            <TextInput
+              style={[styles.input, { flex: 1, marginRight: 8 }]}
+              placeholder="Novo dia (ex: terça)"
+              value={newDay}
+              onChangeText={setNewDay}
+            />
+            <TouchableOpacity style={styles.addDayButton} onPress={handleAddDay}>
+              <Text style={styles.buttonText}>Adicionar</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {currentExercise && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{currentExercise.name}</Text>
-            <Text style={styles.metaText}>
-              <Text style={styles.bold}>Meta:</Text> {currentExercise.sets} séries de {currentExercise.reps}.
-            </Text>
-
-            <Text style={styles.label}>Repetições por Série:</Text>
-            {reps.map((r, idx) => (
-              <View key={idx} style={styles.repRow}>
-                <Text style={styles.repLabel}>Série {idx + 1}</Text>
+        {/* Exercícios livres */}
+        {selectedDay ? (
+          <View style={styles.section}>
+            <Text style={styles.label}>Exercícios do Dia</Text>
+            <View style={styles.addDayRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginRight: 8 }]}
+                placeholder="Nome do exercício"
+                value={newExercise}
+                onChangeText={setNewExercise}
+              />
+              <TouchableOpacity style={styles.addDayButton} onPress={handleAddExercise}>
+                <Text style={styles.buttonText}>Adicionar</Text>
+              </TouchableOpacity>
+            </View>
+            {exercises.map((ex) => (
+              <View key={ex.name} style={styles.card}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={styles.cardTitle}>{ex.name}</Text>
+                  <TouchableOpacity onPress={() => handleRemoveExercise(ex.name)}>
+                    <Text style={styles.removeDay}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.label}>Repetições por Série</Text>
+                {ex.reps.map((r, idx) => (
+                  <View key={idx} style={styles.repRow}>
+                    <Text style={styles.repLabel}>Série {idx + 1}</Text>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      value={r === 0 ? "" : r.toString()}
+                      onChangeText={(v) => handleRepChange(ex.name, idx, v)}
+                    />
+                  </View>
+                ))}
+                <View style={styles.seriesButtonsRow}>
+                  <TouchableOpacity
+                    style={[styles.button, styles.addSeriesButton]}
+                    onPress={() => handleAddSeries(ex.name)}
+                  >
+                    <Text style={styles.buttonText}>+ Série</Text>
+                  </TouchableOpacity>
+                  {ex.reps.length > 1 && (
+                    <TouchableOpacity
+                      style={[styles.button, styles.removeSeriesButton]}
+                      onPress={() => handleRemoveSeries(ex.name)}
+                    >
+                      <Text style={styles.buttonText}>- Série</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <Text style={[styles.label, { marginTop: 8 }]}>Peso Utilizado (kg)</Text>
                 <TextInput
                   style={styles.input}
                   keyboardType="numeric"
-                  placeholder="0"
-                  value={r === 0 ? "" : r.toString()}
-                  onChangeText={(v) => handleRepChange(idx, v)}
+                  value={ex.weight}
+                  onChangeText={(v) => handleWeightChange(ex.name, v)}
+                  placeholder="Ex: 35"
                 />
               </View>
             ))}
-
-            <Text style={[styles.label, { marginTop: 8 }]}>Peso Utilizado (kg)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              value={weight}
-              onChangeText={setWeight}
-              placeholder="Ex: 35"
-            />
           </View>
-        )}
+        ) : null}
 
+        {/* Relatório */}
         <View style={styles.card}>
-          <Text style={styles.label}>Relatório: O que preciso melhorar?</Text>
+          <Text style={styles.label}>Relatório (O que melhorar?)</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             multiline
             numberOfLines={4}
             value={report}
             onChangeText={setReport}
-            placeholder="Ex: Aumentar carga, Repetições, Testar variações..."
+            placeholder="Ex: Aumentar carga, repetições, testar variações..."
           />
-          <TouchableOpacity style={styles.button} onPress={handleCalculate}>
+          <TouchableOpacity style={styles.button} onPress={handleSave}>
             <Text style={styles.buttonText}>Salvar Relatório</Text>
           </TouchableOpacity>
-
           <TouchableOpacity style={styles.linkButton} onPress={() => navigation.navigate("History")}>
             <Text style={styles.linkButtonText}>Ver Histórico</Text>
           </TouchableOpacity>
         </View>
 
+        {/* Sugestão/Resumo */}
         {suggestion ? (
           <View style={styles.suggestionCard}>
             <Text style={styles.suggestionText}>{suggestion}</Text>
@@ -251,19 +269,26 @@ const HomeScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f5" },
+    container: { 
+    flex: 1, 
+    backgroundColor: "#f5f5f5", 
+  },
   scrollView: { flex: 1, padding: 16 },
   header: { alignItems: "center", marginBottom: 16 },
   title: { fontSize: 22, fontWeight: "bold", color: "#222" },
-  controls: { marginBottom: 12 },
+  section: { marginBottom: 18, backgroundColor: "#fff", borderRadius: 10, padding: 12, elevation: 1 },
   label: { fontSize: 15, fontWeight: "600", color: "#333", marginBottom: 8 },
   daySelector: { marginBottom: 8 },
-  dayButton: { padding: 10, marginRight: 8, backgroundColor: "#e7e7e7", borderRadius: 8, minWidth: 90, alignItems: "center" },
+  dayItem: { flexDirection: "row", alignItems: "center", marginRight: 8 },
+  dayButton: { padding: 10, backgroundColor: "#e7e7e7", borderRadius: 8, minWidth: 90, alignItems: "center" },
   dayButtonSelected: { backgroundColor: "#007AFF" },
   dayButtonText: { color: "#555", fontWeight: "600" },
   dayButtonTextSelected: { color: "#fff" },
-  exerciseList: { marginBottom: 12 },
-  exerciseButton: { padding: 10, marginBottom: 8, backgroundColor: "#e7e7e7", borderRadius: 8 },
+  removeDay: { color: "#e53935", marginLeft: 2, fontWeight: "bold", fontSize: 16 },
+  addDayRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
+  addDayButton: { backgroundColor: "#007AFF", padding: 12, borderRadius: 8, alignItems: "center" },
+  exerciseList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  exerciseButton: { padding: 10, marginRight: 8, marginBottom: 8, backgroundColor: "#e7e7e7", borderRadius: 8 },
   exerciseButtonSelected: { backgroundColor: "#007AFF" },
   exerciseText: { color: "#444" },
   exerciseTextSelected: { color: "#fff", fontWeight: "700" },
@@ -277,6 +302,9 @@ const styles = StyleSheet.create({
   textArea: { height: 100, textAlignVertical: "top", paddingTop: 10 },
   button: { backgroundColor: "#007AFF", padding: 14, borderRadius: 8, alignItems: "center", marginTop: 10 },
   buttonText: { color: "#fff", fontWeight: "700" },
+  addSeriesButton: { backgroundColor: "#4CAF50", flex: 1, marginRight: 5, marginTop: 0 },
+  removeSeriesButton: { backgroundColor: "#e53935", flex: 1, marginLeft: 5, marginTop: 0 },
+  seriesButtonsRow: { flexDirection: "row", marginTop: 8, marginBottom: 4 },
   linkButton: { marginTop: 10, padding: 10, alignItems: "center" },
   linkButtonText: { color: "#007AFF", fontWeight: "600" },
   suggestionCard: { backgroundColor: "#e8f5e8", padding: 12, borderRadius: 10, marginTop: 6, borderLeftWidth: 4, borderLeftColor: "#4CAF50" },
