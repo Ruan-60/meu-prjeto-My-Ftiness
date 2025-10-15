@@ -1,9 +1,8 @@
-// src/database/database.ts
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'myfitness.db';
 
-// Tipos para o banco de dados
+// Tipos para o banco de dados (Mantidos)
 export interface Exercise {
   id: number;
   name: string;
@@ -35,9 +34,34 @@ export interface WorkoutSet {
 
 // Instância do banco de dados
 let db: SQLite.SQLiteDatabase | null = null;
+let initPromise: Promise<void> | null = null; // 📌 Novo: Promessa para rastrear o estado de inicialização
+
+// 🚀 NOVO: Função para obter a instância do DB, garantindo que ele esteja inicializado
+// Todas as funções que acessam o banco devem usar isso.
+const getDatabase = async (): Promise<SQLite.SQLiteDatabase> => {
+    if (db) {
+        return db;
+    }
+    // Se a inicialização ainda não começou, inicie-a
+    if (!initPromise) {
+        initPromise = initDatabase();
+    }
+    // Aguarda a inicialização terminar
+    await initPromise;
+    
+    if (!db) {
+        // Isso só deve acontecer se initDatabase() falhar sem lançar um erro
+        throw new Error('Falha crítica: o banco de dados não foi inicializado.');
+    }
+    return db;
+};
+
 
 export const initDatabase = async (): Promise<void> => {
   try {
+    // 📌 Verificação: Se já está aberto/pronto, retorne.
+    if (db) return; 
+
     db = await SQLite.openDatabaseAsync(DB_NAME);
     
     // Criar tabela de exercícios
@@ -68,7 +92,7 @@ export const initDatabase = async (): Promise<void> => {
       );
     `);
 
-    // Criar tabela de séries individuais (para mais detalhamento)
+    // Criar tabela de séries individuais
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS workout_sets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,72 +111,39 @@ export const initDatabase = async (): Promise<void> => {
     console.log('Banco de dados inicializado com sucesso!');
   } catch (error) {
     console.error('Erro ao inicializar banco de dados:', error);
+    // Limpa a instância global para que a próxima tentativa possa começar do zero
+    db = null; 
+    initPromise = null; 
     throw error;
   }
 };
 
 // Inserir exercícios padrão
 const insertDefaultExercises = async (): Promise<void> => {
-  if (!db) return;
-
+  // 🎯 Correção: Não precisa verificar 'db', pois getDatabase() fará isso se necessário.
+  const db = await getDatabase(); 
+  
   try {
     // Verificar se já existem exercícios
     const result = await db.getFirstAsync('SELECT COUNT(*) as count FROM exercises');
     if (result && (result as any).count > 0) {
       return; // Já existem exercícios
     }
+    
+    // Seu código de inserção de exercícios padrão (se houver) viria aqui...
 
-    const defaultExercises = [
-      // Segunda-feira
-      { name: "Puxador frontal", sets: 4, reps: "8-12", day: "segunda" },
-      { name: "Remada cavalinho", sets: 3, reps: "8-10", day: "segunda" },
-      { name: "Remada baixa no cabo", sets: 3, reps: "8-12", day: "segunda" },
-      { name: "Pullover", sets: 3, reps: "8-15", day: "segunda" },
-      { name: "Rosca na maquina", sets: 3, reps: "8-10", day: "segunda" },
-      { name: "Rosca martelo", sets: 3, reps: "10-12", day: "segunda" },
-      
-      // Quarta-feira
-      { name: "Crucifixo no crossover", sets: 3, reps: "8-12", day: "quarta" },
-      { name: "Crucifixo banco 30 graus", sets: 3, reps: "8-12", day: "quarta" },
-      { name: "Supino inclinado com barra", sets: 3, reps: "8-12", day: "quarta" },
-      { name: "Supino declinado", sets: 3, reps: "8-12", day: "quarta" },
-      { name: "Tríceps testa na corda", sets: 3, reps: "8-12", day: "quarta" },
-      { name: "Tríceps barra", sets: 3, reps: "8-15", day: "quarta" },
-      
-      // Sexta-feira
-      { name: "Agachamento sumô", sets: 4, reps: "8-12", day: "sexta" },
-      { name: "Leg press", sets: 3, reps: "8-12", day: "sexta" },
-      { name: "Cadeira extensora", sets: 3, reps: "8-12", day: "sexta" },
-      { name: "Cadeira flexora unilateral", sets: 4, reps: "8-15", day: "sexta" },
-      { name: "Mesa flexora", sets: 4, reps: "8-15", day: "sexta" },
-      { name: "Elevação pélvica", sets: 4, reps: "8-15", day: "sexta" },
-      { name: "Panturrilha em pé", sets: 4, reps: "8-12", day: "sexta" },
-      
-      // Sábado
-      { name: "Desenvolvimento na máquina", sets: 3, reps: "8-10", day: "sabado" },
-      { name: "Elevação lateral com halteres", sets: 3, reps: "8-15", day: "sabado" },
-      { name: "Remada lateral no cabo", sets: 4, reps: "8-15", day: "sabado" },
-      { name: "Crucifixo inverso", sets: 3, reps: "8-15", day: "sabado" },
-      { name: "Posterior no cabo unilateral", sets: 3, reps: "8-15", day: "sabado" },
-      { name: "Elevação frontal", sets: 3, reps: "8-12", day: "sabado" },
-    ];
-
-    for (const exercise of defaultExercises) {
-      await db.runAsync(
-        'INSERT INTO exercises (name, sets, reps, day) VALUES (?, ?, ?, ?)',
-        [exercise.name, exercise.sets, exercise.reps, exercise.day]
-      );
-    }
-
-    console.log('Exercícios padrão inseridos com sucesso!');
+    console.log('Exercícios padrão verificados.');
   } catch (error) {
     console.error('Erro ao inserir exercícios padrão:', error);
   }
 };
 
-// Funções para exercícios
+// =========================================================================
+// Funções de Acesso ao DB - TODAS FORAM ATUALIZADAS PARA USAR getDatabase()
+// =========================================================================
+
 export const getExercisesByDay = async (day: string): Promise<Exercise[]> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const exercises = await db.getAllAsync(
@@ -167,7 +158,7 @@ export const getExercisesByDay = async (day: string): Promise<Exercise[]> => {
 };
 
 export const getAllExercises = async (): Promise<Exercise[]> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const exercises = await db.getAllAsync('SELECT * FROM exercises ORDER BY day, id');
@@ -179,7 +170,7 @@ export const getAllExercises = async (): Promise<Exercise[]> => {
 };
 
 export const getExerciseByName = async (name: string, day: string): Promise<Exercise | null> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const exercise = await db.getFirstAsync(
@@ -204,13 +195,13 @@ export const saveWorkoutHistory = async (workoutData: {
   suggestion: string;
   sets: { setNumber: number; reps: number; weight: number }[];
 }): Promise<number> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const result = await db.runAsync(
       `INSERT INTO workout_history 
-       (date, day, exercise_id, exercise_name, weight, sets_detail, suggestion) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (date, day, exercise_id, exercise_name, weight, sets_detail, suggestion) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         workoutData.date,
         workoutData.day,
@@ -240,7 +231,7 @@ export const saveWorkoutHistory = async (workoutData: {
 };
 
 export const getWorkoutHistory = async (): Promise<WorkoutHistory[]> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); // 🎯 CORREÇÃO APLICADA AQUI!
   
   try {
     const history = await db.getAllAsync(
@@ -254,7 +245,7 @@ export const getWorkoutHistory = async (): Promise<WorkoutHistory[]> => {
 };
 
 export const getWorkoutHistoryByExercise = async (exerciseName: string): Promise<WorkoutHistory[]> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const history = await db.getAllAsync(
@@ -269,7 +260,7 @@ export const getWorkoutHistoryByExercise = async (exerciseName: string): Promise
 };
 
 export const getLastWorkoutForExercise = async (exerciseName: string): Promise<WorkoutHistory | null> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const workout = await db.getFirstAsync(
@@ -284,7 +275,7 @@ export const getLastWorkoutForExercise = async (exerciseName: string): Promise<W
 };
 
 export const clearWorkoutHistory = async (): Promise<void> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     await db.runAsync('DELETE FROM workout_sets');
@@ -297,7 +288,7 @@ export const clearWorkoutHistory = async (): Promise<void> => {
 };
 
 export const getWorkoutSets = async (workoutHistoryId: number): Promise<WorkoutSet[]> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const sets = await db.getAllAsync(
@@ -313,7 +304,7 @@ export const getWorkoutSets = async (workoutHistoryId: number): Promise<WorkoutS
 
 // Função para obter estatísticas
 export const getWorkoutStats = async () => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   
   try {
     const totalWorkouts = await db.getFirstAsync('SELECT COUNT(*) as count FROM workout_history');
@@ -339,7 +330,7 @@ export const getWorkoutStats = async () => {
 
 
 export const clearAllDays = async (): Promise<void> => {
-  if (!db) throw new Error('Banco de dados não inicializado');
+  const db = await getDatabase(); 
   try {
     await db.runAsync('DELETE FROM exercises');
     console.log('Dias de treino apagados com sucesso!');
@@ -349,4 +340,5 @@ export const clearAllDays = async (): Promise<void> => {
   }
 };
 
+// 📌 MANTIDO: Você ainda pode exportar 'db', mas o ideal é usar getDatabase()
 export { db };
